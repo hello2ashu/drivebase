@@ -1,0 +1,88 @@
+services:
+  drivebase:
+    image: ghcr.io/drivebase/drivebase:latest
+    container_name: drivebase
+    restart: unless-stopped
+    ports:
+      - "8088:3000"
+    volumes:
+      - /volume1/docker/drivebase/drivebase_data:/app/data
+      # Your shared folders (remove :ro if you want Drivebase to write to them)
+      - /volume1/ashish-personal:/srv/ashish-personal:ro
+      - /volume1/Gurukul:/srv/gurukul:ro
+    configs:
+      - source: drivebase_config
+        target: /app/config.toml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - drivebase-network
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: drivebase-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: drivebase
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: drivebase
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drivebase"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - drivebase-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: drivebase-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - drivebase-network
+
+networks:
+  drivebase-network:
+    driver: bridge
+
+volumes:
+  drivebase_data:
+  postgres_data:
+  redis_data:
+
+configs:
+  drivebase_config:
+    content: |
+      [server]
+      env = "prod"
+      port = 3000
+      host = "0.0.0.0"
+
+      [db]
+      url = "postgres://drivebase:${DB_PASSWORD}@postgres:5432/drivebase?sslmode=disable"
+
+      [redis]
+      url = "redis://redis:6379/0"
+
+      [crypto]
+      masterKeyBase64 = "${MASTER_KEY}"
+
+      [auth]
+      betterAuthSecret = "${AUTH_SECRET}"
+      baseUrl = "http://192.168.189.40:8088"   # your NAS IP and port
+      trustedOrigins = []
+
+      [log]
+      level = "info"
